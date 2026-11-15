@@ -7,18 +7,14 @@ const validator = require('validator');
 const path = require('path');
 
 const app = express();
-
-// Дозволяємо завантаження React/Babel/Unsplash скриптів у хмарному середовищі
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '10kb' }));
 app.use(cors());
-
-// Роздача клієнтської частини (public/index.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Отримання конфігурації зі змінних середовища (ENV)
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!MONGO_URI) {
     console.error('❌ ПОМИЛКА: Змінна середовища MONGO_URI не задана!');
@@ -48,7 +44,7 @@ const orderSchema = new mongoose.Schema({
 const Order = mongoose.model('Order', orderSchema);
 
 mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ Успішно підключено до MongoDB Atlas через ENV'))
+    .then(() => console.log('✅ Успішно підключено до MongoDB Atlas'))
     .catch(err => console.error('Помилка підключення до БД:', err));
 
 function sanitizeInput(str) {
@@ -56,13 +52,14 @@ function sanitizeInput(str) {
     return validator.escape(str.trim());
 }
 
-// Ендпоінт моніторингу продуктивності сервісу (Health & Metrics)
+// Ендпоінт моніторингу продуктивності сервісу
 app.get('/api/health', (req, res) => {
     const memory = process.memoryUsage();
     const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
     res.status(200).json({
         status: 'OK',
         environment: process.env.NODE_ENV || 'development',
+        aiServiceConfigured: Boolean(GEMINI_API_KEY),
         uptimeSeconds: Math.round(process.uptime()),
         databaseStatus: dbStates[mongoose.connection.readyState] || 'unknown',
         memoryUsageMB: {
@@ -126,6 +123,60 @@ app.post('/api/orders', async (req, res) => {
         });
     } catch (err) {
         res.status(500).json({ error: 'Внутрішня помилка сервера' });
+    }
+});
+
+// AI-сервіс: Інтелектуальний чат-консультант на базі Google Gemini API
+app.post('/api/ai-chat', async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message || typeof message !== 'string' || message.trim().length === 0) {
+            return res.status(400).json({ error: 'Введіть запитання для AI-консультанта.' });
+        }
+        if (!GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'Не налаштовано ключ GEMINI_API_KEY у змінних середовища.' });
+        }
+
+        // Отримуємо актуальний каталог з MongoDB для контексту AI
+        const products = await Product.find();
+        const catalogContext = products.map(p =>
+            `- ${p.name} (${p.category}): ${p.price} грн, ${p.inStock ? 'в наявності' : 'немає в наявності'}`
+        ).join('\n');
+
+        const prompt = `Ти — дружній та професійний AI-консультант інтернет-магазину техніки Apple Store UA.
+Ось актуальний асортимент нашого магазину:
+${catalogContext}
+
+Відповідай українською мовою стисло (3–5 речень), чітко та по суті, допомагаючи клієнту обрати товар із нашого списку.
+Запитання клієнта: ${message.trim()}`;
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }]
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return res.status(response.status).json({
+                error: data.error?.message || 'Помилка виклику Google Gemini API'
+            });
+        }
+
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Не вдалося сформувати відповідь.';
+        res.status(200).json({
+            reply,
+            model: 'gemini-2.5-flash'
+        });
+    } catch (err) {
+        console.error('Помилка AI-сервісу:', err);
+        res.status(500).json({ error: 'Внутрішня помилка при зверненні до інтелектуального сервісу.' });
     }
 });
 
