@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab 5 — Apple Store UA (Cloud Deployment & Monitoring)</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+            background-color: #000000;
+            color: #f5f5f7;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .apple-nav {
+            background: rgba(22, 22, 23, 0.85);
+            backdrop-filter: blur(20px);
+            height: 52px;
+            position: fixed;
+            top: 0; left: 0; width: 100%; z-index: 1000;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 40px; font-size: 0.85rem; color: #86868b;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .logo { color: #f5f5f7; font-weight: 600; font-size: 1rem; }
+        .nav-right { display: flex; align-items: center; gap: 14px; }
+        .health-link {
+            color: #34c759; text-decoration: none; font-size: 0.82rem;
+            background: rgba(52, 199, 89, 0.12); padding: 4px 10px;
+            border-radius: 8px; border: 1px solid rgba(52, 199, 89, 0.3);
+        }
+        .health-link:hover { background: rgba(52, 199, 89, 0.22); }
+        .session-bar { display: flex; align-items: center; gap: 8px; }
+        .session-input {
+            background: #2c2c2e; border: 1px solid #3a3a3c; color: #f5f5f7;
+            padding: 5px 10px; border-radius: 8px; font-size: 0.8rem;
+        }
+        .small-btn {
+            background: #0071e3; color: white; border: none; padding: 5px 12px;
+            border-radius: 8px; font-size: 0.8rem; cursor: pointer;
+        }
+        .small-btn.secondary { background: #3a3a3c; }
+        .hero { text-align: center; padding: 95px 20px 25px; }
+        .hero h1 { font-size: 2.3rem; font-weight: 600; margin-bottom: 6px; }
+        .hero p { color: #86868b; font-size: 1rem; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; width: 100%; flex: 1; }
+        .section-box {
+            background: #161617;
+            border-radius: 24px;
+            padding: 28px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .section-box h2 { font-size: 1.45rem; margin-bottom: 6px; }
+        .desc { color: #86868b; margin-bottom: 20px; font-size: 0.9rem; }
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+            gap: 18px;
+        }
+        .product-card {
+            background: #1d1d1f;
+            border-radius: 18px;
+            padding: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .img-box {
+            background: #2c2c2e; border-radius: 12px; height: 140px;
+            overflow: hidden; margin-bottom: 12px;
+        }
+        .product-image { width: 100%; height: 100%; object-fit: cover; }
+        .product-category {
+            font-size: 0.72rem; text-transform: uppercase; color: #86868b;
+            font-weight: 600; letter-spacing: 0.05em; margin-bottom: 4px; display: block;
+        }
+        .product-card h3 { font-size: 1rem; margin-bottom: 6px; }
+        .price { font-size: 1.05rem; font-weight: 600; color: #0071e3; margin-bottom: 8px; }
+        .status { font-size: 0.8rem; margin-bottom: 12px; display: block; }
+        .status.in-stock { color: #34c759; }
+        .status.out-stock { color: #ff3b30; }
+        .buy-btn {
+            background-color: #0071e3; color: white; border: none;
+            padding: 9px 16px; border-radius: 980px; font-size: 0.88rem;
+            cursor: pointer; width: 100%;
+        }
+        .buy-btn:hover:not(:disabled) { background-color: #0077ed; }
+        .buy-btn:disabled { background-color: #2c2c2e; color: #545458; cursor: not-allowed; }
+        .checkout-grid {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 24px;
+        }
+        @media (max-width: 768px) { .checkout-grid { grid-template-columns: 1fr; } }
+        .cart-item {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #1d1d1f; padding: 12px 14px; border-radius: 12px; margin-bottom: 10px;
+        }
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; font-size: 0.85rem; color: #a1a1a6; margin-bottom: 5px; }
+        .form-control {
+            width: 100%; background: #1d1d1f; border: 1px solid #3a3a3c;
+            color: #f5f5f7; padding: 10px 12px; border-radius: 10px; font-size: 0.92rem;
+        }
+        .form-control:focus { outline: none; border-color: #0071e3; }
+        .alert-error {
+            background: rgba(255, 59, 48, 0.15); border: 1px solid #ff3b30;
+            color: #ff6961; padding: 12px; border-radius: 12px; margin-bottom: 14px; font-size: 0.88rem;
+        }
+        .alert-success {
+            background: rgba(52, 199, 89, 0.15); border: 1px solid #34c759;
+            color: #63e685; padding: 12px; border-radius: 12px; margin-bottom: 14px; font-size: 0.88rem;
+        }
+        footer {
+            text-align: center; padding: 25px; color: #86868b;
+            font-size: 0.8rem; border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        function App() {
+            const [products, setProducts] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+
+            // Локальне сховище (localStorage) для кошика замовлень
+            const [cart, setCart] = React.useState(() => {
+                const saved = localStorage.getItem('apple_store_cart');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            // Сесійне сховище (sessionStorage) для авторизації користувача
+            const [sessionUser, setSessionUser] = React.useState(() => {
+                return sessionStorage.getItem('apple_session_user') || '';
+            });
+            const [loginInput, setLoginInput] = React.useState('');
+
+            // Стан форми оформлення замовлення
+            const [customerName, setCustomerName] = React.useState(sessionUser);
+            const [email, setEmail] = React.useState('');
+            const [phone, setPhone] = React.useState('');
+            const [paymentMethod, setPaymentMethod] = React.useState('apple_pay');
+            const [comment, setComment] = React.useState('');
+
+            const [errors, setErrors] = React.useState([]);
+            const [successMsg, setSuccessMsg] = React.useState('');
+
+            // Синхронізація кошика з localStorage
+            React.useEffect(() => {
+                localStorage.setItem('apple_store_cart', JSON.stringify(cart));
+            }, [cart]);
+
+            // Завантаження товарів із хмарного API (/api/products)
+            React.useEffect(() => {
+                fetch('/api/products')
+                    .then(res => res.json())
+                    .then(data => {
+                        setProducts(data);
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error('Помилка завантаження товарів:', err);
+                        setLoading(false);
+                    });
+            }, []);
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (loginInput.trim().length >= 2) {
+                    sessionStorage.setItem('apple_session_user', loginInput.trim());
+                    setSessionUser(loginInput.trim());
+                    setCustomerName(loginInput.trim());
+                    setLoginInput('');
+                }
+            };
+
+            const handleLogout = () => {
+                sessionStorage.removeItem('apple_session_user');
+                setSessionUser('');
+            };
+
+            const addToCart = (product) => {
+                setCart(prev => {
+                    const existing = prev.find(item => item._id === product._id);
+                    if (existing) {
+                        return prev.map(item =>
+                            item._id === product._id ? { ...item, quantity: item.quantity + 1 } : item
+                        );
+                    }
+                    return [...prev, { _id: product._id, name: product.name, price: product.price, quantity: 1 }];
+                });
+            };
+
+            const removeFromCart = (id) => {
+                setCart(prev => prev.filter(item => item._id !== id));
+            };
+
+            const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+            const handleOrderSubmit = async (e) => {
+                e.preventDefault();
+                setErrors([]);
+                setSuccessMsg('');
+
+                try {
+                    const response = await fetch('/api/orders', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            customerName,
+                            email,
+                            phone,
+                            paymentMethod,
+                            comment,
+                            items: cart
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        setErrors(data.details || [data.error]);
+                    } else {
+                        setSuccessMsg(`${data.message} Номер замовлення: ${data.orderId}`);
+                        setCart([]);
+                        localStorage.removeItem('apple_store_cart');
+                        setComment('');
+                    }
+                } catch (err) {
+                    setErrors(['Не вдалося з’єднатися із сервером.']);
+                }
+            };
+
+            return (
+                <div className="apple-store-app">
+                    <nav className="apple-nav">
+                        <span className="logo"> Apple Store UA</span>
+                        <div className="nav-right">
+                            <a href="/api/health" target="_blank" className="health-link">
+                                ● Моніторинг (/api/health)
+                            </a>
+                            <div className="session-bar">
+                                {sessionUser ? (
+                                    <>
+                                        <span style={{ color: '#34c759' }}>● Сесія: <b>{sessionUser}</b></span>
+                                        <button className="small-btn secondary" onClick={handleLogout}>Вийти</button>
+                                    </>
+                                ) : (
+                                    <form onSubmit={handleLogin} style={{ display: 'flex', gap: '6px' }}>
+                                        <input
+                                            type="text"
+                                            placeholder="Ім'я для сесії..."
+                                            className="session-input"
+                                            value={loginInput}
+                                            onChange={(e) => setLoginInput(e.target.value)}
+                                        />
+                                        <button type="submit" className="small-btn">Увійти</button>
+                                    </form>
+                                )}
+                            </div>
+                        </div>
+                    </nav>
+
+                    <header className="hero">
+                        <h1>Лабораторна робота №5</h1>
+                        <p>Хмарні сервіси та деплоймент на платформі Render (ENV + Моніторинг)</p>
+                    </header>
+
+                    <main className="container">
+                        <section className="section-box">
+                            <h2>Каталог техніки Apple</h2>
+                            <p className="desc">Хмарний вебсервіс підключено до MongoDB Atlas через змінні середовища (ENV).</p>
+                            {loading ? (
+                                <p style={{ color: '#86868b', textAlign: 'center' }}>Завантаження каталогу з хмарної бази даних...</p>
+                            ) : (
+                                <div className="product-grid">
+                                    {products.map(product => (
+                                        <div key={product._id} className="product-card">
+                                            <div>
+                                                <div className="img-box">
+                                                    <img
+                                                        src={product.image}
+                                                        alt={product.name}
+                                                        className="product-image"
+                                                        onError={(e) => {
+                                                            e.target.onerror = null;
+                                                            e.target.src = `https://placehold.co/300x200/2c2c2e/f5f5f7?text=${encodeURIComponent(product.category)}`;
+                                                        }}
+                                                    />
+                                                </div>
+                                                <span className="product-category">{product.category}</span>
+                                                <h3>{product.name}</h3>
+                                                <p className="price">{product.price.toLocaleString()} ₴</p>
+                                            </div>
+                                            <div>
+                                                <span className={`status ${product.inStock ? 'in-stock' : 'out-stock'}`}>
+                                                    {product.inStock ? '✓ В наявності' : '✕ Немає в наявності'}
+                                                </span>
+                                                <button
+                                                    className="buy-btn"
+                                                    disabled={!product.inStock}
+                                                    onClick={() => addToCart(product)}
+                                                >
+                                                    + До кошика
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+
+                        <section className="section-box">
+                            <h2>Кошик та оформлення замовлення</h2>
+                            <p className="desc">Перевірка роботи кошика (localStorage), сесії (sessionStorage) та збереження замовлень у хмарній БД.</p>
+
+                            <div className="checkout-grid">
+                                <div>
+                                    <h3 style={{ marginBottom: '12px', fontSize: '1.1rem' }}>
+                                        Ваш кошик ({cart.reduce((s, i) => s + i.quantity, 0)} шт.)
+                                    </h3>
+                                    {cart.length === 0 ? (
+                                        <p style={{ color: '#86868b', fontSize: '0.9rem' }}>Кошик порожній. Оберіть товар вище.</p>
+                                    ) : (
+                                        <>
+                                            {cart.map(item => (
+                                                <div key={item._id} className="cart-item">
+                                                    <div>
+                                                        <div style={{ fontWeight: '600', fontSize: '0.95rem' }}>{item.name}</div>
+                                                        <div style={{ color: '#86868b', fontSize: '0.82rem' }}>
+                                                            {item.price.toLocaleString()} ₴ × {item.quantity}
+                                                        </div>
+                                                    </div>
+                                                    <button className="small-btn secondary" onClick={() => removeFromCart(item._id)}>✕</button>
+                                                </div>
+                                            ))}
+                                            <div style={{ marginTop: '14px', fontSize: '1.15rem', fontWeight: '600', color: '#0071e3' }}>
+                                                Разом до сплати: {totalAmount.toLocaleString()} ₴
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                <form onSubmit={handleOrderSubmit}>
+                                    {errors.length > 0 && (
+                                        <div className="alert-error">
+                                            <b>Помилка валідації:</b>
+                                            <ul style={{ marginLeft: '18px', marginTop: '4px' }}>
+                                                {errors.map((err, idx) => <li key={idx}>{err}</li>)}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {successMsg && <div className="alert-success">{successMsg}</div>}
+
+                                    <div className="form-group">
+                                        <label>Ім'я та прізвище *</label>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Ольга Мурава"
+                                            value={customerName}
+                                            onChange={(e) => setCustomerName(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>Електронна пошта (Email) *</label>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="olha.murava-ip231@nung.edu.ua"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>Номер телефону *</label>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="+380956620741"
+                                            value={phone}
+                                            onChange={(e) => setPhone(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>Спосіб оплати</label>
+                                        <select
+                                            className="form-control"
+                                            value={paymentMethod}
+                                            onChange={(e) => setPaymentMethod(e.target.value)}
+                                        >
+                                            <option value="apple_pay">Apple Pay</option>
+                                            <option value="card">Банківська картка (Visa / Mastercard)</option>
+                                            <option value="cash">Оплата при отриманні</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>Коментар до замовлення</label>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Наприклад: доставка Новою Поштою"
+                                            value={comment}
+                                            onChange={(e) => setComment(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <button type="submit" className="buy-btn">Підтвердити замовлення</button>
+                                </form>
+                            </div>
+                        </section>
+                    </main>
+
+                    <footer>
+                        <p>&copy; 2026 Apple Store UA — Cloud Deployment on Render.</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
