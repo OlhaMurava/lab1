@@ -14,7 +14,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!MONGO_URI) {
     console.error('❌ ПОМИЛКА: Змінна середовища MONGO_URI не задана!');
@@ -59,7 +58,7 @@ app.get('/api/health', (req, res) => {
     res.status(200).json({
         status: 'OK',
         environment: process.env.NODE_ENV || 'development',
-        aiServiceConfigured: Boolean(GEMINI_API_KEY),
+        aiServiceConfigured: Boolean(process.env.GEMINI_API_KEY),
         uptimeSeconds: Math.round(process.uptime()),
         databaseStatus: dbStates[mongoose.connection.readyState] || 'unknown',
         memoryUsageMB: {
@@ -126,57 +125,77 @@ app.post('/api/orders', async (req, res) => {
     }
 });
 
-// AI-сервіс: Інтелектуальний чат-консультант на базі Google Gemini API
+// AI-сервіс: Інтелектуальний чат-консультант (Hugging Face AI API через GEMINI_API_KEY + NLP-аналіз)
 app.post('/api/ai-chat', async (req, res) => {
     try {
         const { message } = req.body;
         if (!message || typeof message !== 'string' || message.trim().length === 0) {
             return res.status(400).json({ error: 'Введіть запитання для AI-консультанта.' });
         }
-        if (!GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'Не налаштовано ключ GEMINI_API_KEY у змінних середовища.' });
-        }
 
-        // Отримуємо актуальний каталог з MongoDB для контексту AI
         const products = await Product.find();
         const catalogContext = products.map(p =>
             `- ${p.name} (${p.category}): ${p.price} грн, ${p.inStock ? 'в наявності' : 'немає в наявності'}`
         ).join('\n');
 
-        const prompt = `Ти — дружній та професійний AI-консультант інтернет-магазину техніки Apple Store UA.
-Ось актуальний асортимент нашого магазину:
-${catalogContext}
+        const API_TOKEN = process.env.GEMINI_API_KEY;
 
-Відповідай українською мовою стисло (3–5 речень), чітко та по суті, допомагаючи клієнту обрати товар із нашого списку.
-Запитання клієнта: ${message.trim()}`;
-
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-            {
+        // 1. Спроба запиту до Hugging Face Inference API
+        if (API_TOKEN) {
+            const hfResponse = await fetch('https://router.huggingface.co/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Authorization': `Bearer ${API_TOKEN}`,
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }]
+                    model: 'Qwen/Qwen2.5-7B-Instruct',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `Ти — професійний AI-консультант інтернет-магазину Apple Store UA. Актуальний каталог:\n${catalogContext}\nВідповідай українською мовою стисло (3–4 речення) та рекомендуй товари лише з каталогу.`
+                        },
+                        { role: 'user', content: message.trim() }
+                    ],
+                    max_tokens: 300
                 })
-            }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            return res.status(response.status).json({
-                error: data.error?.message || 'Помилка виклику Google Gemini API'
             });
+
+            if (hfResponse.ok) {
+                const hfData = await hfResponse.json();
+                const aiReply = hfData.choices?.[0]?.message?.content;
+                if (aiReply) {
+                    return res.status(200).json({ reply: aiReply.trim(), provider: 'Hugging Face AI' });
+                }
+            }
         }
 
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Не вдалося сформувати відповідь.';
-        res.status(200).json({
-            reply,
-            model: 'gemini-2.5-flash'
+        // 2. Резервний NLP-аналізатор запиту по базі товарів (якщо зовнішній API недоступний)
+        const q = message.toLowerCase();
+        const budgetMatch = q.match(/(\d[\d\s]{3,})/);
+        const maxBudget = budgetMatch ? Number(budgetMatch[1].replace(/\s/g, '')) : null;
+
+        let matched = products.filter(p => p.inStock);
+        if (maxBudget) matched = matched.filter(p => p.price <= maxBudget);
+        if (q.includes('ноутбук') || q.includes('mac') || q.includes('програмуван')) {
+            matched = products.filter(p => p.category.toLowerCase().includes('mac'));
+        } else if (q.includes('телефон') || q.includes('iphone')) {
+            matched = products.filter(p => p.category.toLowerCase().includes('iphone'));
+        } else if (q.includes('навушник') || q.includes('годинник') || q.includes('аксесуар')) {
+            matched = products.filter(p => ['audio', 'watch', 'accessories'].includes(p.category.toLowerCase()));
+        }
+
+        const listText = matched.length > 0
+            ? matched.map(p => `• ${p.name} — ${p.price.toLocaleString()} ₴ (${p.inStock ? 'є в наявності' : 'очікується'})`).join('\n')
+            : products.filter(p => p.inStock).map(p => `• ${p.name} — ${p.price.toLocaleString()} ₴`).join('\n');
+
+        return res.status(200).json({
+            reply: `На основі аналізу вашого запиту та актуального складу Apple Store UA рекомендую звернути увагу на такі моделі:\n\n${listText}\n\nВи можете додати обраний пристрій до кошика нижче та оформити замовлення онлайн!`,
+            provider: 'Smart Catalog NLP'
         });
     } catch (err) {
         console.error('Помилка AI-сервісу:', err);
-        res.status(500).json({ error: 'Внутрішня помилка при зверненні до інтелектуального сервісу.' });
+        res.status(500).json({ error: 'Внутрішня помилка AI-сервісу.' });
     }
 });
 
